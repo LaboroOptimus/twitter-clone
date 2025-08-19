@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: twitter_postgres
+    environment:
+      POSTGRES_USER: twitter
+      POSTGRES_PASSWORD: twitterpass
+      POSTGRES_DB: twitterdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twitter -d twitterdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  user-service:
+    build:
+      context: ./services/user                           
+      dockerfile: Dockerfile
+    container_name: user_service
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://twitter:twitterpass@postgres:5432/twitterdb?sslmode=disable"
+      # альтернативно, если сервис читает раздельные переменные:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: twitter
+      DB_PASSWORD: twitterpass
+      DB_NAME: twitterdb
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  posts-service:
+    build:
+      context: ./services/post
+      dockerfile: Dockerfile
+    container_name: post_service
+    environment:
+      PORT: "8081"
+      DATABASE_URL: "postgres://twitter:twitterpass@postgres:5432/twitterdb?sslmode=disable"
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: twitter
+      DB_PASSWORD: twitterpass
+      DB_NAME: twitterdb
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
