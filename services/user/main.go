@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 	"twitter/pkg/authjwt"
+	"twitter/pkg/redisx"
 	"user/handlers"
 	"user/internal/db"
 	"user/internal/db/migrations"
@@ -28,6 +29,16 @@ func main() {
 	// миграции
 	migrations.Run()
 
+	rdb := redisx.NewClient(redisx.Config{
+		Addr: os.Getenv("REDIS_ADDR"),
+	})
+	producer := redisx.NewProducer(rdb)
+
+	notifStream := os.Getenv("REDIS_NOTIF_STREAM")
+	if notifStream == "" {
+		notifStream = "events:notifications"
+	}
+
 	// jwt
 	accessSecret := os.Getenv("JWT_ACCESS_SECRET")
 	refreshSecret := os.Getenv("JWT_REFRESH_SECRET")
@@ -38,11 +49,22 @@ func main() {
 
 	userRepo := repo.NewUser(db.DB)
 	refreshRepo := repo.NewRefresh(db.DB)
+	followRepo := repo.NewFollow(db.DB)
 
 	loginDeps := handlers.LoginDeps{
 		Users:   userRepo,
 		Refresh: refreshRepo,
 		JWT:     jwtService,
+	}
+
+	followDeps := &handlers.FollowDeps{
+		Follow: followRepo,
+		Producer: producer,
+		NotifStream: notifStream,
+	}
+
+	userDeps := handlers.UserDeps{
+		Users: userRepo,
 	}
 
 	router := mux.NewRouter()
@@ -52,12 +74,16 @@ func main() {
 	router.HandleFunc("/login", handlers.Login(loginDeps)).Methods(http.MethodPost)
 	router.HandleFunc("/refresh", handlers.RefreshToken(loginDeps)).Methods(http.MethodPost)
 
-	api := router.PathPrefix("/api").Subrouter()
-	api.Use(authjwt.AuthMiddleware(jwtService))
+	private := router.NewRoute().Subrouter()
+	private.Use(authjwt.AuthMiddleware(jwtService))
 
 	// приватные
-	api.HandleFunc("/me", handlers.GetProfile(userRepo)).Methods(http.MethodGet)
-	api.HandleFunc("/me", handlers.UpdateProfile(userRepo)).Methods(http.MethodPatch)
+	private.HandleFunc("/me", handlers.GetProfile(userDeps)).Methods(http.MethodGet)
+	private.HandleFunc("/me", handlers.UpdateProfile(userDeps)).Methods(http.MethodPatch)
+	private.HandleFunc("/user", handlers.GetUser(userDeps)).Methods(http.MethodGet)
+
+	private.HandleFunc("/follow/{id:[0-9]+}", handlers.FollowUser(followDeps)).Methods(http.MethodPost)
+	private.HandleFunc("/unfollow/{id:[0-9]+}", handlers.UnfollowUser(followDeps)).Methods(http.MethodDelete)
 
 	// запускаем сервер
 	if err := http.ListenAndServe(":8080", router); err != nil {

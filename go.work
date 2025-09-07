@@ -2,6 +2,8 @@ go 1.24.4
 
 use (
 	./pkg/authjwt
-	./services/user
+	./pkg/redisx
+	./services/notifications
 	./services/post
+	./services/user
 )

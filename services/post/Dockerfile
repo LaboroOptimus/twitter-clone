@@ -1,16 +1,18 @@
-FROM golang:1.24-alpine
+FROM golang:1.24-alpine AS builder
+
 WORKDIR /app
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache git
 
-# модули (go.sum может отсутствовать)
-COPY go.* ./
-RUN if [ -f go.sum ]; then go mod download; fi
-
-# исходники
+# Копируем всё репо сразу — пути ../../pkg/* уже существуют
 COPY . .
 
-# сборка из корня
-RUN go build -o posts .
+# Теперь go mod download видит ../../pkg/redisx и ../../pkg/authjwt
+WORKDIR /app/services/post
+RUN go mod download
+RUN go build -o /bin/posts-service .
 
+FROM alpine:3.20
+WORKDIR /app
+COPY --from=builder /bin/posts-service ./posts-service
 EXPOSE 8081
-CMD ["./posts"]
+CMD ["./posts-service"]

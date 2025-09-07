@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -15,6 +16,7 @@ func ParseJSON(w http.ResponseWriter, r *http.Request, dst interface{}) error {
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(dst); err != nil {
+		fmt.Println("error", err)
 		return err
 	}
 	return nil

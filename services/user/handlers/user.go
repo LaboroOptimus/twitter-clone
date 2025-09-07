@@ -13,32 +13,31 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func GetProfile(userRepo repo.User) http.HandlerFunc {
+type UserDeps struct {
+	Users repo.User
+}
+
+func GetProfile(deps UserDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idParam := r.FormValue("id")
+		id, ok := authjwt.UserIDFrom(r.Context())
 
-		if idParam == "" {
+		if !ok {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 		}
 
-		id, err := strconv.Atoi(idParam)
-
-		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-		}
-
-		user, err := userRepo.GetByID(r.Context(), uint(id))
+		user, err := deps.Users.GetByID(r.Context(), id)
 
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
 
 		result := dto.ProfileResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			Nickname:  user.Nickname,
-			Bio:       user.Bio,
-			AvatarURL: user.AvatarURL,
+			ID:                user.ID,
+			Email:             user.Email,
+			Nickname:          user.Nickname,
+			Bio:               user.Bio,
+			AvatarURL:         user.AvatarURL,
+			SubscribersAmount: user.SubscribersAmount,
 		}
 
 		utils.Res(w, http.StatusOK, result)
@@ -46,9 +45,13 @@ func GetProfile(userRepo repo.User) http.HandlerFunc {
 	}
 }
 
-func UpdateProfile(userRepo repo.User) http.HandlerFunc {
+func UpdateProfile(deps UserDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _ := authjwt.UserIDFrom(r.Context())
+		userID, ok := authjwt.UserIDFrom(r.Context())
+
+		if !ok {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+		}
 
 		var request dto.UpdateRequest
 		if err := utils.ParseJSON(w, r, &request); err != nil {
@@ -73,7 +76,7 @@ func UpdateProfile(userRepo repo.User) http.HandlerFunc {
 			updates["avatar_url"] = request.AvatarURL
 		}
 
-		if err := userRepo.UpdateProfile(r.Context(), userID, updates); err != nil {
+		if err := deps.Users.UpdateProfile(r.Context(), userID, updates); err != nil {
 			// ловим конфликт уникальности никнейма (23505)
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -85,5 +88,35 @@ func UpdateProfile(userRepo repo.User) http.HandlerFunc {
 		}
 
 		utils.Res(w, http.StatusOK, map[string]string{"message": "profile updated"})
+	}
+}
+
+func GetUser(deps UserDeps) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		idParam := req.URL.Query().Get("id")
+
+		id, err := strconv.Atoi(idParam)
+		if err != nil || id < 0 {
+			http.Error(w, "invalid param", http.StatusBadRequest)
+			return
+		}
+
+		user, err := deps.Users.GetByID(req.Context(), uint(id))
+
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		response := dto.ProfileResponse{
+			ID:                user.ID,
+			Email:             user.Email,
+			Nickname:          user.Nickname,
+			Bio:               user.Bio,
+			AvatarURL:         user.AvatarURL,
+			SubscribersAmount: user.SubscribersAmount,
+		}
+
+		utils.Res(w, http.StatusOK, response)
 	}
 }

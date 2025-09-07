@@ -34,4 +34,5 @@ func Connect() {
 	}
 
 	sqlDB.SetConnMaxLifetime(time.Hour)
+
 }

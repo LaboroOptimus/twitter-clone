@@ -7,7 +7,7 @@ import (
 )
 
 func Run() {
-	err := db.DB.AutoMigrate(&models.User{}, &models.Refresh{})
+	err := db.DB.AutoMigrate(&models.User{}, &models.Refresh{}, &models.Follow{})
 	if err != nil {
 		log.Fatalf("migration failed: %v", err)
 	}
